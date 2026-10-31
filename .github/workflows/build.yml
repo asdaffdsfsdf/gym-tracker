@@ -10,15 +10,19 @@ on:
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-latest
     timeout-minutes: 25
 
     steps:
       - name: Check out the code
         uses: actions/checkout@v4
 
-      - name: Show the Xcode version in use
-        run: xcodebuild -version
+      - name: Use the newest Xcode on the runner
+        run: |
+          NEWEST="$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+          echo "Selecting $NEWEST"
+          sudo xcode-select -s "$NEWEST/Contents/Developer"
+          xcodebuild -version
 
       - name: Install XcodeGen
         run: brew install xcodegen
