@@ -41,11 +41,10 @@ final class Store: ObservableObject {
     // MARK: Lifecycle
 
     init() {
+        data = AppData.seed()
         if let bytes = try? Data(contentsOf: dataURL),
            let decoded = try? JSONDecoder().decode(AppData.self, from: bytes) {
             data = decoded
-        } else {
-            data = AppData.seed()
         }
     }
 
