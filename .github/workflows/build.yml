@@ -60,6 +60,32 @@ jobs:
           echo "Packaging $APP_PATH"
           mkdir -p Payload
           cp -R "$APP_PATH" "Payload/$(basename "$APP_PATH")"
+
+          # The home screen reads the icon out of the compiled asset catalog,
+          # but the app switcher and Spotlight fall back to loose icon files
+          # named in CFBundleIconFiles. Belt and braces: ship both.
+          APP="Payload/$(basename "$APP_PATH")"
+          ICONS="Resources/Assets.xcassets/AppIcon.appiconset"
+          PLIST="$APP/Info.plist"
+          cp "$ICONS/icon-120.png" "$APP/AppIcon60x60@2x.png" || true
+          cp "$ICONS/icon-180.png" "$APP/AppIcon60x60@3x.png" || true
+          PB=/usr/libexec/PlistBuddy
+          $PB -c "Print :CFBundleIcons" "$PLIST" >/dev/null 2>&1 \
+            || $PB -c "Add :CFBundleIcons dict" "$PLIST" || true
+          $PB -c "Print :CFBundleIcons:CFBundlePrimaryIcon" "$PLIST" >/dev/null 2>&1 \
+            || $PB -c "Add :CFBundleIcons:CFBundlePrimaryIcon dict" "$PLIST" || true
+          $PB -c "Print :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconName" "$PLIST" >/dev/null 2>&1 \
+            || $PB -c "Add :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconName string AppIcon" "$PLIST" || true
+          if ! $PB -c "Print :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconFiles" "$PLIST" >/dev/null 2>&1; then
+            $PB -c "Add :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconFiles array" "$PLIST" || true
+            $PB -c "Add :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconFiles:0 string AppIcon60x60" "$PLIST" || true
+          fi
+
+          echo "--- icon keys in the built Info.plist ---"
+          $PB -c "Print :CFBundleIcons" "$PLIST" || true
+          echo "--- icon files inside the app ---"
+          ls -1 "$APP" | grep -i -E 'icon|Assets.car' || true
+
           zip -qry GymTracker.ipa Payload
           ls -lh GymTracker.ipa
 
