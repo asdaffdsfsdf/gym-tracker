@@ -1,0 +1,131 @@
+name: Build IPA
+
+# Builds the app on a free macOS runner and leaves an unsigned .ipa
+# attached to the run, ready for SideStore to sign on the phone.
+# Runs on every push, and can be started by hand from the Actions tab.
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Use the newest Xcode on the runner
+        # XcodeGen generates a modern project format, so an older default
+        # Xcode on the image cannot open it.
+        run: |
+          ls -d /Applications/Xcode*.app
+          NEWEST="$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+          echo "Selecting $NEWEST"
+          sudo xcode-select -s "$NEWEST/Contents/Developer"
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project
+        run: xcodegen generate
+
+      - name: Build
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project GymTracker.xcodeproj \
+            -scheme GymTracker \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            ONLY_ACTIVE_ARCH=NO \
+            build
+
+      - name: Wrap the app into an unsigned IPA
+        run: |
+          PRODUCTS="build/Build/Products/Release-iphoneos"
+          APP_PATH="$(find "$PRODUCTS" -maxdepth 1 -name '*.app' | head -n 1)"
+          if [ -z "$APP_PATH" ]; then
+            echo "No .app was produced. Contents were:"
+            ls -la "$PRODUCTS" || true
+            exit 1
+          fi
+          echo "Packaging $APP_PATH"
+          mkdir -p Payload
+          cp -R "$APP_PATH" "Payload/$(basename "$APP_PATH")"
+          zip -qry GymTracker.ipa Payload
+          ls -lh GymTracker.ipa
+
+      - name: Upload the IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: GymTracker-ipa
+          path: GymTracker.ipa
+          if-no-files-found: error
+          retention-days: 90
+
+  # A simulator build, for running the real app in a browser on Appetize
+  # instead of reinstalling on the phone for every change.
+  simulator:
+    runs-on: macos-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Use the newest Xcode on the runner
+        run: |
+          NEWEST="$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+          sudo xcode-select -s "$NEWEST/Contents/Developer"
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project
+        run: xcodegen generate
+
+      - name: Build for the simulator
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project GymTracker.xcodeproj \
+            -scheme GymTracker \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build-sim \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Zip the simulator app
+        run: |
+          PRODUCTS="build-sim/Build/Products/Debug-iphonesimulator"
+          APP_PATH="$(find "$PRODUCTS" -maxdepth 1 -name '*.app' | head -n 1)"
+          if [ -z "$APP_PATH" ]; then
+            echo "No simulator .app was produced. Contents were:"
+            ls -la "$PRODUCTS" || true
+            exit 1
+          fi
+          echo "Packaging $APP_PATH"
+          cd "$PRODUCTS"
+          zip -qry "$GITHUB_WORKSPACE/GymTracker-sim.zip" "$(basename "$APP_PATH")"
+          ls -lh "$GITHUB_WORKSPACE/GymTracker-sim.zip"
+
+      - name: Upload the simulator build
+        uses: actions/upload-artifact@v4
+        with:
+          name: GymTracker-simulator
+          path: GymTracker-sim.zip
+          if-no-files-found: error
+          retention-days: 90
