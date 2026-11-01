@@ -18,7 +18,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Use the newest Xcode on the runner
+        # XcodeGen generates a modern project format, so an older default
+        # Xcode on the image cannot open it.
         run: |
+          ls -d /Applications/Xcode*.app
           NEWEST="$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
           echo "Selecting $NEWEST"
           sudo xcode-select -s "$NEWEST/Contents/Developer"
@@ -65,5 +68,64 @@ jobs:
         with:
           name: GymTracker-ipa
           path: GymTracker.ipa
+          if-no-files-found: error
+          retention-days: 90
+
+  # A simulator build, for running the real app in a browser on Appetize
+  # instead of reinstalling on the phone for every change.
+  simulator:
+    runs-on: macos-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Use the newest Xcode on the runner
+        run: |
+          NEWEST="$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+          sudo xcode-select -s "$NEWEST/Contents/Developer"
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project
+        run: xcodegen generate
+
+      - name: Build for the simulator
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project GymTracker.xcodeproj \
+            -scheme GymTracker \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build-sim \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Zip the simulator app
+        run: |
+          PRODUCTS="build-sim/Build/Products/Debug-iphonesimulator"
+          APP_PATH="$(find "$PRODUCTS" -maxdepth 1 -name '*.app' | head -n 1)"
+          if [ -z "$APP_PATH" ]; then
+            echo "No simulator .app was produced. Contents were:"
+            ls -la "$PRODUCTS" || true
+            exit 1
+          fi
+          echo "Packaging $APP_PATH"
+          cd "$PRODUCTS"
+          zip -qry "$GITHUB_WORKSPACE/GymTracker-sim.zip" "$(basename "$APP_PATH")"
+          ls -lh "$GITHUB_WORKSPACE/GymTracker-sim.zip"
+
+      - name: Upload the simulator build
+        uses: actions/upload-artifact@v4
+        with:
+          name: GymTracker-simulator
+          path: GymTracker-sim.zip
           if-no-files-found: error
           retention-days: 90
