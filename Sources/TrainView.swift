@@ -37,6 +37,7 @@ struct TrainView: View {
         }
         .background(T.bg)
         .scrollDismissesKeyboard(.interactively)
+        .keyboardDoneBar()
         .overlay(alignment: .bottom) {
             if let notice {
                 Text(notice)

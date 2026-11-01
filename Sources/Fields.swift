@@ -13,6 +13,51 @@ enum Keyboard {
     }
 }
 
+/// Whether a keyboard is on screen, read from the system rather than from any
+/// one field, so the Done bar belongs to the screen and not to whichever field
+/// happened to be focused first.
+final class KeyboardWatcher: ObservableObject {
+    static let shared = KeyboardWatcher()
+    @Published var up = false
+
+    private init() {
+        let c = NotificationCenter.default
+        c.addObserver(forName: UIResponder.keyboardWillShowNotification,
+                      object: nil, queue: .main) { [weak self] _ in
+            self?.up = true
+        }
+        for name in [UIResponder.keyboardWillHideNotification,
+                     UIResponder.keyboardDidHideNotification] {
+            c.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                self?.up = false
+            }
+        }
+    }
+}
+
+private struct DoneBar: ViewModifier {
+    @ObservedObject private var keys = KeyboardWatcher.shared
+
+    func body(content: Content) -> some View {
+        content.safeAreaInset(edge: .bottom, spacing: 0) {
+            if keys.up {
+                HStack {
+                    Spacer()
+                    Button("Done") { Keyboard.dismiss() }
+                        .font(.system(size: 16, weight: .semibold))
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 10)
+                }
+                .frame(maxWidth: .infinity)
+                .background(.bar)
+                .overlay(alignment: .top) {
+                    Rectangle().fill(T.line).frame(height: 0.5)
+                }
+            }
+        }
+    }
+}
+
 extension View {
     /// Taps on empty space put the keyboard away. It sits behind the content,
     /// so it never competes with the buttons and fields on top of it.
@@ -23,6 +68,9 @@ extension View {
                 .onTapGesture { Keyboard.dismiss() }
         )
     }
+
+    /// A Done bar that sits above the keyboard for as long as it is up.
+    func keyboardDoneBar() -> some View { modifier(DoneBar()) }
 }
 
 /// The sunken box every number sits in.
@@ -82,14 +130,6 @@ struct NumberInput: View {
             .onChange(of: focused) { _, now in
                 if !now { text = shown(value) }
             }
-            .toolbar {
-                if focused {
-                    ToolbarItemGroup(placement: .keyboard) {
-                        Spacer()
-                        Button("Done") { focused = false }.fontWeight(.semibold)
-                    }
-                }
-            }
     }
 }
 
@@ -118,14 +158,6 @@ struct RawInput: View {
             }
             .onChange(of: stored) { _, new in
                 if !focused && new != text { text = new }
-            }
-            .toolbar {
-                if focused {
-                    ToolbarItemGroup(placement: .keyboard) {
-                        Spacer()
-                        Button("Done") { focused = false }.fontWeight(.semibold)
-                    }
-                }
             }
     }
 }

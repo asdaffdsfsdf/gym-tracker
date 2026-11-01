@@ -69,6 +69,9 @@ struct KPI: View {
     var tint: Color? = nil
     var compact: Bool = false
     var align: HorizontalAlignment = .leading
+    /// False lets the column shrink to its text, so the dividers between
+    /// columns can be centred in the gaps rather than pinned to a grid.
+    var fill: Bool = true
 
     var body: some View {
         VStack(alignment: align, spacing: 3) {
@@ -94,7 +97,8 @@ struct KPI: View {
                     .lineLimit(1).minimumScaleFactor(0.8)
             }
         }
-        .frame(maxWidth: .infinity, alignment: Alignment(horizontal: align, vertical: .top))
+        .frame(maxWidth: fill ? .infinity : nil,
+               alignment: Alignment(horizontal: align, vertical: .top))
     }
 }
 
@@ -212,14 +216,6 @@ struct NumField: View {
             .focused($focused)
             .modifier(FieldBox(align: align))
             .onChange(of: text) { _, new in onChange(new) }
-            .toolbar {
-                if focused {
-                    ToolbarItemGroup(placement: .keyboard) {
-                        Spacer()
-                        Button("Done") { focused = false }.fontWeight(.semibold)
-                    }
-                }
-            }
     }
 }
 

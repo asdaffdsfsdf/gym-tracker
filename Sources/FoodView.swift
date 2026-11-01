@@ -30,6 +30,7 @@ struct FoodView: View {
         }
         .background(T.bg)
         .scrollDismissesKeyboard(.interactively)
+        .keyboardDoneBar()
     }
 
     private var summaryLine: String {

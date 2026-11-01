@@ -18,6 +18,7 @@ struct PlanView: View {
     /// anything on its own.
     @State private var armed: String? = nil
     @State private var showAllFoods = false
+    @State private var removingFood = false
     @State private var exportJSON = ""
     @State private var exportCSV = ""
 
@@ -60,6 +61,7 @@ struct PlanView: View {
         }
         .background(T.bg)
         .scrollDismissesKeyboard(.interactively)
+        .keyboardDoneBar()
         .overlay(alignment: .bottom) {
             if let toast {
                 Text(toast)
@@ -317,12 +319,18 @@ struct PlanView: View {
             ForEach(meal.items) { item in
                 let food = d.foods.first { $0.id == item.foodId }
                 let m = Calc.itemMacros(item, d.foods)
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 8) {
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
                         Text(food?.name ?? "(removed food)")
-                            .font(.system(size: 14))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        NumberInput(value: item.qty, width: 60) { nv in
+                            .font(.system(size: 15, weight: .medium))
+                            .lineLimit(2)
+                        Text("\(Fmt.r0(m.kcal)) kcal · \(Fmt.r0(m.p))P · \(Fmt.r0(m.c))C · \(Fmt.r0(m.f))F")
+                            .font(.system(size: 11)).foregroundStyle(T.mut).monospacedDigit()
+                            .lineLimit(1).minimumScaleFactor(0.85)
+                    }
+                    Spacer(minLength: 4)
+                    HStack(spacing: 3) {
+                        NumberInput(value: item.qty, width: 50) { nv in
                             if let mi = store.data.meals.firstIndex(where: { $0.id == meal.id }),
                                let ii = store.data.meals[mi].items.firstIndex(where: { $0.id == item.id }) {
                                 store.data.meals[mi].items[ii].qty = nv ?? 0
@@ -330,29 +338,29 @@ struct PlanView: View {
                             }
                         }
                         Text(food?.qtySuffix ?? "")
-                            .font(.system(size: 12)).foregroundStyle(T.mut).frame(width: 14)
-                        Button {
-                            let name = food?.name ?? "this item"
-                            if armed == item.id {
-                                armed = nil
-                                if let mi = store.data.meals.firstIndex(where: { $0.id == meal.id }) {
-                                    store.data.meals[mi].items.removeAll { $0.id == item.id }
-                                    store.save()
-                                    flash("Removed \(name).")
-                                }
-                            } else {
-                                arm(item.id, name)
-                            }
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(armed == item.id ? T.bad : T.mut)
-                        }
-                        .buttonStyle(.plain)
+                            .font(.system(size: 11)).foregroundStyle(T.mut)
+                            .frame(width: 11, alignment: .leading)
                     }
-                    Text("\(Fmt.r0(m.kcal)) kcal · \(Fmt.r0(m.p))P · \(Fmt.r0(m.c))C · \(Fmt.r0(m.f))F")
-                        .font(.system(size: 11)).foregroundStyle(T.mut).monospacedDigit()
+                    Button {
+                        let name = food?.name ?? "this item"
+                        if armed == item.id {
+                            armed = nil
+                            if let mi = store.data.meals.firstIndex(where: { $0.id == meal.id }) {
+                                store.data.meals[mi].items.removeAll { $0.id == item.id }
+                                store.save()
+                                flash("Removed \(name).")
+                            }
+                        } else {
+                            arm(item.id, name)
+                        }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 16))
+                            .foregroundStyle(armed == item.id ? T.bad : T.mut)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .padding(.vertical, 7)
+                .padding(.vertical, 9)
                 .overlay(alignment: .bottom) { Rectangle().fill(T.line).frame(height: 0.5) }
             }
 
@@ -435,34 +443,12 @@ struct PlanView: View {
                 .submitLabel(.done)
                 .padding(9).background(T.sunken, in: RoundedRectangle(cornerRadius: 8))
 
-            // a Grid so the column headings cannot drift out of line with the
-            // numbers underneath them, whatever the names are
-            Grid(alignment: .trailing, horizontalSpacing: 10, verticalSpacing: 0) {
-                GridRow {
-                    Text("FOOD")
-                        .gridColumnAlignment(.leading)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Text("KCAL")
-                    Text("P")
-                    Text("C")
-                    Text("F")
-                    Color.clear.frame(width: 20, height: 1)
-                }
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(T.mut)
-                .padding(.bottom, 7)
-
+            if removingFood {
                 ForEach(shownFoods) { f in
-                    Divider().gridCellUnsizedAxes(.horizontal)
-                    GridRow {
-                        Text(f.name)
-                            .font(.system(size: 13))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        Text(Fmt.r0(f.kcal))
-                        Text(Fmt.trim(f.p))
-                        Text(Fmt.trim(f.c))
-                        Text(Fmt.trim(f.f))
-                        Button {
+                    HStack {
+                        Text(f.name).font(.system(size: 14))
+                        Spacer(minLength: 8)
+                        Button(armed == f.id ? "Tap again to remove" : "Remove") {
                             if armed == f.id {
                                 armed = nil
                                 store.data.foods.removeAll { $0.id == f.id }
@@ -471,39 +457,70 @@ struct PlanView: View {
                             } else {
                                 arm(f.id, f.name)
                             }
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 15))
-                                .foregroundStyle(armed == f.id ? T.bad : T.mut)
-                                .frame(width: 20, height: 30)
-                                .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundStyle(T.bad)
                     }
-                    .font(.system(size: 12))
-                    .monospacedDigit()
-                    .padding(.vertical, 8)
+                    .padding(.vertical, 10)
+                    .overlay(alignment: .bottom) { Rectangle().fill(T.line).frame(height: 0.5) }
+                }
+            } else {
+                // a Grid so the column headings cannot drift out of line with
+                // the numbers underneath them, whatever the names are
+                Grid(alignment: .trailing, horizontalSpacing: 12, verticalSpacing: 0) {
+                    GridRow {
+                        Text("FOOD")
+                            .gridColumnAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Text("KCAL")
+                        Text("P")
+                        Text("C")
+                        Text("F")
+                    }
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(T.mut)
+                    .padding(.bottom, 7)
+
+                    ForEach(shownFoods) { f in
+                        Divider().gridCellUnsizedAxes(.horizontal)
+                        GridRow {
+                            Text(f.name)
+                                .font(.system(size: 13))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Text(Fmt.r0(f.kcal))
+                            Text(Fmt.trim(f.p))
+                            Text(Fmt.trim(f.c))
+                            Text(Fmt.trim(f.f))
+                        }
+                        .font(.system(size: 12))
+                        .monospacedDigit()
+                        .padding(.vertical, 9)
+                    }
                 }
             }
 
-            if hits.count > shownFoods.count || (showAllFoods && hits.count > 12) {
+            if hits.count > 12 {
                 Button {
                     showAllFoods.toggle()
                 } label: {
-                    Text(showAllFoods ? "Show fewer"
-                                      : "Show all \(hits.count) foods")
+                    Text(showAllFoods ? "Show fewer" : "Show all \(hits.count) foods")
                         .font(.system(size: 13))
                         .frame(maxWidth: .infinity).padding(.vertical, 10)
                 }
                 .buttonStyle(.plain)
             }
 
-            Button { showNewFood.toggle() } label: {
-                Text(showNewFood ? "Cancel" : "Add a food")
-                    .frame(maxWidth: .infinity).padding(.vertical, 12)
-                    .background(T.sunken, in: RoundedRectangle(cornerRadius: 10))
+            HStack(spacing: 9) {
+                plainButton(showNewFood ? "Cancel" : "Add a food") {
+                    showNewFood.toggle()
+                    if showNewFood { removingFood = false }
+                }
+                plainButton(removingFood ? "Done removing" : "Remove a food") {
+                    removingFood.toggle()
+                    armed = nil
+                    if removingFood { showNewFood = false }
+                }
             }
-            .buttonStyle(.plain)
 
             if showNewFood {
                 TextField("Name", text: $nf.name)

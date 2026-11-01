@@ -4,6 +4,8 @@ struct DashboardView: View {
     @EnvironmentObject var store: Store
     @Binding var tab: Int
     @State private var pick: String? = nil
+    @State private var allLifts = false
+    @State private var allWeeks = false
 
     private var d: AppData { store.data }
     private var unit: String { d.profile.unit }
@@ -23,9 +25,9 @@ struct DashboardView: View {
     }
     private var rateVerdict: String {
         guard let r = rate else { return "needs ~2 weeks" }
-        if r < d.profile.rateLow { return "under your band" }
-        if r > d.profile.rateHigh { return "over your band" }
-        return "inside your band"
+        if r < d.profile.rateLow { return "under band" }
+        if r > d.profile.rateHigh { return "over band" }
+        return "on track"
     }
     private var rateTint: Color {
         guard let r = rate else { return T.mut }
@@ -63,6 +65,7 @@ struct DashboardView: View {
         }
         .background(T.bg)
         .scrollDismissesKeyboard(.interactively)
+        .keyboardDoneBar()
     }
 
     // MARK: Banners
@@ -127,24 +130,29 @@ struct DashboardView: View {
 
             if series.count >= 2 {
                 WeightChart(points: series, unit: unit)
-                HStack(alignment: .top, spacing: 10) {
+                HStack(alignment: .top, spacing: 0) {
                     KPI(label: "Since start",
                         value: gained.map { Fmt.signed($0, 2) } ?? "--",
                         unit: unit,
                         sub: start.map { "from \(Fmt.n2($0))" },
                         tint: (gained ?? 0) > 0 ? T.good : nil,
-                        compact: true)
+                        compact: true, fill: false)
+                    Spacer(minLength: 8)
                     Divider().frame(height: 36)
+                    Spacer(minLength: 8)
                     KPI(label: "Target rate",
                         value: "\(Fmt.trim(d.profile.rateLow))-\(Fmt.trim(d.profile.rateHigh))",
                         unit: "\(unit)/wk", sub: rateVerdict,
-                        compact: true, align: .center)
+                        compact: true, align: .center, fill: false)
+                    Spacer(minLength: 8)
                     Divider().frame(height: 36)
+                    Spacer(minLength: 8)
                     KPI(label: "6mo at rate",
                         value: rate.map { Fmt.signed($0 * 26, 1) } ?? "--",
                         unit: unit, sub: "projected",
-                        compact: true, align: .trailing)
+                        compact: true, align: .trailing, fill: false)
                 }
+                .padding(.top, 5)
             } else {
                 Text("Two mornings of weight and the trend line starts.")
                     .font(.system(size: 13)).foregroundStyle(T.mut)
@@ -276,7 +284,15 @@ struct DashboardView: View {
     private var strengthCard: some View {
         let names = exerciseNames
         let chosen = (pick.flatMap { names.contains($0) ? $0 : nil }) ?? names.first
-        return Card(title: "Strength", meta: "best set") {
+        let shownMode = chosen.flatMap { store.history($0).last?.mode }
+        let meta: String = {
+            switch shownMode {
+            case .weight: return "est. 1RM"
+            case .time:   return "best hold"
+            default:      return "best set"
+            }
+        }()
+        return Card(title: "Strength", meta: meta) {
             if names.isEmpty {
                 EmptyNote(text: "Finish a session and your progression charts start here.")
             } else if let chosen {
@@ -338,7 +354,7 @@ struct DashboardView: View {
             .foregroundStyle(T.mut)
             .padding(.bottom, 8)
 
-            ForEach(names, id: \.self) { name in
+            ForEach(allLifts ? names : Array(names.prefix(5)), id: \.self) { name in
                 let h = store.history(name)
                 if let last = h.last {
                     let prev: Double? = h.count > 1 ? last.best - h[h.count - 2].best : nil
@@ -357,6 +373,15 @@ struct DashboardView: View {
                     .padding(.vertical, 9)
                     .overlay(alignment: .top) { Rectangle().fill(T.line).frame(height: 0.5) }
                 }
+            }
+
+            if names.count > 5 {
+                Button { allLifts.toggle() } label: {
+                    Text(allLifts ? "Show fewer" : "Show all \(names.count) lifts")
+                        .font(.system(size: 13))
+                        .frame(maxWidth: .infinity).padding(.vertical, 10)
+                }
+                .buttonStyle(.plain)
             }
         }
     }
@@ -392,7 +417,8 @@ struct DashboardView: View {
                 .foregroundStyle(T.mut)
 
                 VStack(spacing: 0) {
-                    ForEach(Array(rows.enumerated()), id: \.element.id) { idx, r in
+                    ForEach(Array((allWeeks ? rows : Array(rows.prefix(6))).enumerated()),
+                            id: \.element.id) { idx, r in
                         let prev = idx + 1 < rows.count ? rows[idx + 1] : nil
                         let dw: Double? = {
                             guard let a = r.avgWeight, let b = prev?.avgWeight else { return nil }
@@ -424,6 +450,15 @@ struct DashboardView: View {
                         .padding(.vertical, 9)
                         .overlay(alignment: .top) { Rectangle().fill(T.line).frame(height: 0.5) }
                     }
+                }
+
+                if rows.count > 6 {
+                    Button { allWeeks.toggle() } label: {
+                        Text(allWeeks ? "Show fewer" : "Show all \(rows.count) weeks")
+                            .font(.system(size: 13))
+                            .frame(maxWidth: .infinity).padding(.vertical, 10)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }
